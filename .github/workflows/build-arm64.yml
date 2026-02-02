@@ -1,0 +1,42 @@
+name: Build Linux (arm64) PyInstaller bundle
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Build inside arm64 container
+        run: |
+          set -euo pipefail
+          # Use an arm64 python image via docker run (QEMU emulation)
+          docker run --rm --platform=linux/arm64 -v "${GITHUB_WORKSPACE}":/src -w /src python:3.11-slim bash -lc '
+            apt-get update && apt-get install -y --no-install-recommends \
+              build-essential libxcb1 libx11-6 libxcb-xinerama0 libxrender1 libxext6 libgl1 libxkbcommon0 libglib2.0-0 \
+            && python -m pip install --upgrade pip setuptools wheel \
+            && pip install -r requirements.txt pyinstaller \
+            && pyinstaller --noconfirm --clean --windowed \''"--add-data"\' "示例数据:示例数据" \''"--add-data"\' "database:database" --name workbook main.py \
+            && mkdir -p /src/dist_output \
+            && tar -czf /src/dist_output/workbook-linux-arm64.tar.gz -C /src/dist workbook
+          '
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbook-linux-arm64
+          path: dist_output/workbook-linux-arm64.tar.gz
+          retention-days: 7
+
+      - name: Show dist listing
+        run: |
+          ls -la dist || true
+          ls -la dist_output || true

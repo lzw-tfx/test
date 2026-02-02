@@ -1,0 +1,1 @@
+from PyQt6.QtWidgets import *\nfrom PyQt6.QtCore import *\nfrom PyQt6.QtGui import *\n\nclass AddYouthDialog(QDialog):\n    data_updated = pyqtSignal()\n
