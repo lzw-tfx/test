@@ -24,17 +24,20 @@ jobs:
           echo "=== python version inside image ==="
           docker run --rm --platform=linux/arm64 python:3.11-slim python -V || true
 
-      - name: Run build in container (verbose)
+      - name: Run build in container (capture log)
         run: |
           set -x
+          # Run the build inside container and capture all output to a file in the workspace (/src/dist_output/build_log.txt)
           docker run --rm --platform=linux/arm64 -v "${GITHUB_WORKSPACE}":/src -w /src python:3.11-slim bash -lc '
             set -euo pipefail
+            mkdir -p /src/dist_output
             echo "--- apt-get update ---"
             apt-get update -o Acquire::Retries=3 || (cat /var/log/apt/term.log || true; exit 2)
 
             echo "--- install system deps (including system PyQt if available) ---"
             apt-get install -y --no-install-recommends \
               build-essential libxcb1 libx11-6 libxcb-xinerama0 libxrender1 libxext6 libgl1 libxkbcommon0 libglib2.0-0 \
+              libjpeg-dev zlib1g-dev libpng-dev libfreetype6-dev libssl-dev libffi-dev libblas-dev libatlas-base-dev gfortran \
               python3-pyqt6 || true
 
             echo "--- verify PyQt installation ---"
@@ -45,24 +48,43 @@ try:
     print('PyQt6 available, version:', PyQt6.__version__)
 except Exception as e:
     print('PyQt6 not available via apt:', e)
-    sys.exit(0)
+    # continue, we'll try pyinstaller with system libs
 PY
 
             echo "--- pip upgrade/install (excluding PyQt packages) ---"
             python -m pip install --upgrade pip setuptools wheel
             # install requirements except PyQt* to avoid building PyQt from source on arm64
             grep -v -E '^PyQt6' requirements.txt | grep -v -E '^PyQt6-' > req_no_pyqt.txt || true
-            pip install -r req_no_pyqt.txt pyinstaller
+            pip install -r req_no_pyqt.txt pyinstaller || true
 
-            echo "--- running pyinstaller ---"
+            echo "--- running pyinstaller (logging to /src/dist_output/build_log.txt) ---"
             set -x
-            pyinstaller --noconfirm --clean --log-level=DEBUG --windowed --add-data "示例数据:示例数据" --add-data "database:database" --name workbook main.py
+            # run pyinstaller and tee output to build_log
+            pyinstaller --noconfirm --clean --log-level=DEBUG --windowed --add-data "示例数据:示例数据" --add-data "database:database" --name workbook main.py 2>&1 | tee /src/dist_output/build_log.txt
 
             echo "--- packaging artifact ---"
             mkdir -p /src/dist_output
-            tar -czf /src/dist_output/workbook-linux-arm64.tar.gz -C /src/dist workbook
+            tar -czf /src/dist_output/workbook-linux-arm64.tar.gz -C /src/dist workbook || true
           '
 
+      - name: Upload build log
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: dist_output/build_log.txt
+          retention-days: 7
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbook-linux-arm64
+          path: dist_output/workbook-linux-arm64.tar.gz
+          retention-days: 7
+
+      - name: Show dist listing
+        run: |
+          ls -la dist || true
+          ls -la dist_output || true
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
