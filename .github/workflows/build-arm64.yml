@@ -31,15 +31,33 @@ jobs:
             set -euo pipefail
             echo "--- apt-get update ---"
             apt-get update -o Acquire::Retries=3 || (cat /var/log/apt/term.log || true; exit 2)
-            echo "--- apt-get install ---"
+
+            echo "--- install system deps (including system PyQt if available) ---"
             apt-get install -y --no-install-recommends \
-              build-essential libxcb1 libx11-6 libxcb-xinerama0 libxrender1 libxext6 libgl1 libxkbcommon0 libglib2.0-0 || (cat /var/log/apt/term.log || true; exit 2)
-            echo "--- pip upgrade/install ---"
+              build-essential libxcb1 libx11-6 libxcb-xinerama0 libxrender1 libxext6 libgl1 libxkbcommon0 libglib2.0-0 \
+              python3-pyqt6 || true
+
+            echo "--- verify PyQt installation ---"
+            python - <<'PY'
+import sys
+try:
+    import PyQt6
+    print('PyQt6 available, version:', PyQt6.__version__)
+except Exception as e:
+    print('PyQt6 not available via apt:', e)
+    sys.exit(0)
+PY
+
+            echo "--- pip upgrade/install (excluding PyQt packages) ---"
             python -m pip install --upgrade pip setuptools wheel
-            pip install -r requirements.txt pyinstaller
+            # install requirements except PyQt* to avoid building PyQt from source on arm64
+            grep -v -E '^PyQt6' requirements.txt | grep -v -E '^PyQt6-' > req_no_pyqt.txt || true
+            pip install -r req_no_pyqt.txt pyinstaller
+
             echo "--- running pyinstaller ---"
             set -x
             pyinstaller --noconfirm --clean --log-level=DEBUG --windowed --add-data "示例数据:示例数据" --add-data "database:database" --name workbook main.py
+
             echo "--- packaging artifact ---"
             mkdir -p /src/dist_output
             tar -czf /src/dist_output/workbook-linux-arm64.tar.gz -C /src/dist workbook
