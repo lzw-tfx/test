@@ -83,14 +83,3 @@ PY
         run: |
           ls -la dist || true
           ls -la dist_output || true
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: workbook-linux-arm64
-          path: dist_output/workbook-linux-arm64.tar.gz
-          retention-days: 7
-
-      - name: Show dist listing
-        run: |
-          ls -la dist || true
-          ls -la dist_output || true
